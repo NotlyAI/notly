@@ -113,7 +113,7 @@ async function startBackgroundSummarize(tabId, url, selectedText = null) {
 
         const textToSend = text.substring(0, 8000);
 
-        const response = await fetch('https://api.notly.uptrix.fun/summarize', {
+        const response = await fetch('https://api.uptrix.fun/summarize', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
