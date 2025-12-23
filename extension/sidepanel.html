@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+
+<body>
+    <div id="main-screen">
+        <div class="header">
+            <div class="header-top-row">
+                <h1>Notly</h1>
+                <div id="context-badge" class="context-badge">
+                    <span id="context-value">...</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="scroll-area">
+            <div id="result"></div>
+        </div>
+
+        <div id="long-process-toast" class="cancel-toast">
+            <span>Taking too long?</span>
+            <button id="cancel-btn">Cancel</button>
+        </div>
+
+        <div class="footer-fixed">
+            <div class="blur-overlay"></div>
+            <button id="summarize" class="btn-primary">
+                <span id="btn-text">Summarize</span>
+                <div id="btn-loader" class="hidden"></div>
+            </button>
+            <div class="bottom-row">
+                <button id="open-settings" class="btn-icon">
+                    <img src="icon/settings.svg" alt="settings">
+                </button>
+                <button id="github-link-main" class="btn-secondary">
+                    <img src="icon/github.svg" alt="github"> GitHub
+                </button>
+                <button id="donate-main" class="btn-secondary">
+                    <img src="icon/coffee.svg" alt="star"> Support
+                </button>
+            </div>
+            <p class="credit">Created by <a href="https://uptrix.fun" target="_blank">uptrix.fun</a></p>
+        </div>
+    </div>
+
+    <div id="settings-screen" class="hidden">
+        <div class="header">
+            <div class="header-top-row">
+                <h1>Settings</h1>
+                <span class="version-tag">v2.134</span>
+            </div>
+        </div>
+        <div class="settings-body">
+            <div class="s-row">
+                <span>Language</span>
+                <select id="language-select">
+                    <option value="en">English</option>
+                    <option value="ru">Russian</option>
+                </select>
+            </div>
+            <div class="s-row">
+                <span>Detail Level</span>
+                <select id="detail-level">
+                    <option value="concise">Concise</option>
+                    <option value="detailed">Detailed</option>
+                </select>
+            </div>
+            <div class="s-row">
+                <span>Tone</span>
+                <select id="tone">
+                    <option value="professional">Professional</option>
+                    <option value="casual">Casual</option>
+                </select>
+            </div>
+        </div>
+        <div class="footer-fixed">
+            <div class="bottom-row">
+                <button id="back-home" class="btn-icon">
+                    <img src="icon/back.svg" alt="back">
+                </button>
+                <button id="github-settings" class="btn-secondary">
+                    <img src="icon/github.svg" alt="github"> GitHub
+                </button>
+                <button id="donate-settings" class="btn-secondary">
+                    <img src="icon/coffee.svg" alt="star"> Support
+                </button>
+            </div>
+            <p class="credit">Created by <a href="https://uptrix.fun" target="_blank">uptrix.fun</a></p>
+        </div>
+    </div>
+
+    <script src="marked.min.js"></script>
+    <script src="sidepanel.js"></script>
+</body>
+
+</html>

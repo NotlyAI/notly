@@ -1,0 +1,30 @@
+{
+    "manifest_version": 3,
+    "name": "NotlyAI",
+    "version": "2.134",
+    "description": "Private, open-source AI summaries for web pages and selected text",
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "storage",
+        "tabs",
+        "contextMenus",
+        "sidePanel"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_title": "Open NotlyAI"
+    },
+    "side_panel": {
+        "default_path": "sidepanel.html"
+    },
+    "icons": {
+        "128": "icon/icon.png"
+    },
+    "host_permissions": [
+        "http://127.0.0.1:8000/*",
+        "<all_urls>"
+    ]
+}
