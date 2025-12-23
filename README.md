@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="extension/icon/icon.png" width="128" alt="NotlyAI Logo">
+</p>
+
 # NotlyAI
 
 **NotlyAI** is an open-source Google Chrome extension designed for semantic text analysis and summarization. It utilizes a client-server architecture where the browser extension captures page content and communicates with a Python-based backend powered by Large Language Models (LLM).
