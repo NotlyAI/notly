@@ -6,7 +6,7 @@ The system leverages the Llama 3.3 70B model via the Groq API to provide high-sp
 
 ## 📥 Download
 
-**[Download NotlyAI from Chrome Web Store](LINK_TO_STORE)**
+**[Download NotlyAI from Chrome Web Store](https://uptrix.fun)**
 *(Link will be available soon)*
 
 ---

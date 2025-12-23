@@ -88,9 +88,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    if (githubMain) githubMain.onclick = () => openLink('https://g.uptrix.fun');
+    if (githubMain) githubMain.onclick = () => openLink('https://github.com/NotlyAI/notly');
     if (donateMain) donateMain.onclick = () => openLink('https://d.uptrix.fun');
-    if (githubSettings) githubSettings.onclick = () => openLink('https://g.uptrix.fun');
+    if (githubSettings) githubSettings.onclick = () => openLink('https://github.com/NotlyAI/notly');
     if (donateSettings) donateSettings.onclick = () => openLink('https://d.uptrix.fun');
 
     if (summarizeBtn) {
