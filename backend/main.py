@@ -1,3 +1,12 @@
+"""
+This module implements the backend server for the NotlyAI summarization service.
+
+It uses FastAPI to create a web server that exposes a `/summarize` endpoint.
+The server accepts text and summarization parameters, then communicates with the
+Groq API to generate a high-quality, structured summary using a large language model.
+The module is designed to be resilient, supporting multiple API keys and falling back
+if one key fails.
+"""
 import uvicorn
 import os
 from fastapi import FastAPI
@@ -19,12 +28,23 @@ app.add_middleware(
 )
 
 class SummarizeRequest(BaseModel):
+    """Defines the data structure for a summarization request."""
     text: str
-    language: str  # Ожидаем "en" или "ru"
+    language: str
     detail_level: str
     tone: str
 
 def clean_text(text: str) -> str:
+    """
+    Sanitizes a string by attempting to encode and decode it as UTF-8,
+    ignoring any characters that cannot be processed.
+
+    Args:
+        text: The input string to clean.
+
+    Returns:
+        The cleaned string, or an empty string if an error occurs.
+    """
     try:
         return text.encode('utf-8', 'ignore').decode('utf-8')
     except:
@@ -32,92 +52,89 @@ def clean_text(text: str) -> str:
 
 @app.post("/summarize")
 async def summarize(request: SummarizeRequest):
-    # 1. Логгируем, что пришло (Смотри в черное окно терминала!)
-    print(f"Incoming Request -> Lang: {request.language} | Tone: {request.tone}")
+    """
+    Handles the summarization request by calling the Groq API.
 
+    This function retrieves API keys from environment variables, prepares a
+    dynamically generated prompt based on user-specified detail and tone,
+    and then attempts to generate a summary by trying each API key in sequence
+    until one succeeds.
+
+    Args:
+        request: A `SummarizeRequest` object containing the text and parameters.
+
+    Returns:
+        A dictionary with the generated summary or an error message if all
+        API calls fail.
+    """
     keys_str = os.getenv("GROQ_API_KEYS") or os.getenv("GROQ_API_KEY") or ""
     api_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
 
     if not api_keys:
-        return {"summary": "Error: No API keys found."}
+        return {"summary": "Error: Server config error (No API keys)."}
 
     cleaned_text = clean_text(request.text)
     safe_text_length = 35000
     truncated_text = cleaned_text[:safe_text_length]
 
-    # 2. ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ЯЗЫКА
-    # Если пришло "ru", "ru-RU", "russian" -> Русский. Иначе ВСЕГДА Английский.
     if request.language.lower().startswith("ru"):
-        target_lang = "Russian"
-        strict_lang_rule = "Отвечай ТОЛЬКО на русском языке."
+        target_lang_name = "Russian"
+        lang_instruction = "ОТВЕЧАЙ ТОЛЬКО НА РУССКОМ ЯЗЫКЕ."
     else:
-        target_lang = "English"
-        strict_lang_rule = "Answer ONLY in English."
+        target_lang_name = "English"
+        lang_instruction = "ANSWER ONLY IN ENGLISH. Even if the text is in Russian, translate and summarize in English."
 
-    # Настройка Тона
     if request.tone == "casual":
-        tone_prompt = "Casual, conversational, easy to read. Like a blog post."
+        tone_prompt = "Casual, simple, blog-style."
     else:
-        tone_prompt = "Professional, analytical, precise. No fluff."
+        tone_prompt = "Professional, analytical, concise."
 
-    # Настройка Детализации
     if request.detail_level == "detailed":
-        task_prompt = (
-            f"Analyze the input text and create a COMPREHENSIVE SUMMARY in {target_lang}. "
-            "Do NOT use a fixed template. ADAPT structure to content.\n"
-            "- **If Profile:** Focus on Skills & History.\n"
-            "- **If Code:** Focus on Logic & Syntax.\n"
-            "- **If Article:** Focus on Arguments & Impact.\n\n"
-            "**RULES:**\n"
-            "1. NO REPETITION.\n"
-            "2. Use descriptive headers.\n"
-            "3. Write detailed paragraphs."
+        task_description = (
+            f"Create a COMPREHENSIVE ANALYSIS in {target_lang_name}.\n"
+            "1. Title (H1)\n"
+            "2. Detailed Context (paragraph)\n"
+            "3. Key Takeaways (bullet points with explanations)\n"
+            "4. Deep Analysis (H2)\n"
+            "5. Conclusion"
         )
     else:
-        task_prompt = (
-            f"Create a concise summary in {target_lang}. "
-            "Structure:\n"
-            "1. **# Main Title** (H1)\n"
-            "2. One clear summary paragraph.\n"
-            "3. **## Key Points**: 3-5 bullet points."
+        task_description = (
+            f"Create a CONCISE SUMMARY in {target_lang_name}.\n"
+            "1. Title (H1)\n"
+            "2. Short Summary Paragraph\n"
+            "3. 3-5 Key Bullet Points"
         )
 
-    system_prompt = f"""You are an intelligent content analyst.
+    system_message = f"""You are a professional content summarizer.
+STRICT RULES:
+1. OUTPUT LANGUAGE: {target_lang_name} ONLY. {lang_instruction}
+2. Tone: {tone_prompt}
+3. Format: Markdown.
+4. Content: {task_description}"""
 
-CRITICAL RULES:
-1. **OUTPUT LANGUAGE: {target_lang}**. {strict_lang_rule}
-2. TONE: {tone_prompt}
-3. FORMAT: Markdown (# H1, ## H2, - bullets).
-4. LINKS: Preserve URLs as [Link Text](URL).
-5. FORBIDDEN: Do NOT start with "TL;DR" or "Here is the summary".
-6. CONTENT TASK: {task_prompt}"""
+    user_message_content = f"Text to summarize:\n\n{truncated_text}\n\n---\nREMINDER: OUTPUT MUST BE IN {target_lang_name.upper()}!"
 
-    last_error = "No attempts made"
+    last_error = "No attempts"
 
     for i, key in enumerate(api_keys):
         try:
-            print(f"Trying key {i+1}...")
             client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=key)
-            
             completion = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": truncated_text}
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message_content}
                 ],
-                temperature=0.3, 
+                temperature=0.3,
                 max_tokens=4096
             )
-            
             return {"summary": completion.choices[0].message.content.strip()}
-            
         except Exception as e:
-            error_msg = clean_text(str(e))
-            print(f"Key {i+1} failed: {error_msg}")
-            last_error = error_msg
+            last_error = str(e)
             continue
 
-    return {"summary": f"System error. Last error: {last_error}"}
+    return {"summary": f"Service Error: {last_error}"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
