@@ -1,278 +1,380 @@
-/**
- * @file Manages the side panel UI and logic for the NotlyAI extension.
- *
- * This script handles all user interactions within the side panel, including
- * navigating between the main view and settings, triggering summarizations,
- * and displaying results. It communicates with the background script to
- * manage the summarization lifecycle and dynamically updates the UI to reflect
- * the current state (e.g., loading, error, or displaying a summary).
- */
 document.addEventListener('DOMContentLoaded', () => {
-    const main = document.getElementById('main-screen');
-    const settings = document.getElementById('settings-screen');
-    const resDiv = document.getElementById('result');
-    const toast = document.getElementById('long-process-toast');
-    const contextValue = document.getElementById('context-value');
-    const cancelBtn = document.getElementById('cancel-btn');
-    const openSettingsBtn = document.getElementById('open-settings');
-    const backHomeBtn = document.getElementById('back-home');
-    const summarizeBtn = document.getElementById('summarize');
-    const detailSelect = document.getElementById('detail-level');
-    const langSelect = document.getElementById('language-select');
-    const toneSelect = document.getElementById('tone');
-    const githubMain = document.getElementById('github-link-main');
-    const donateMain = document.getElementById('donate-main');
-    const githubSettings = document.getElementById('github-settings');
-    const donateSettings = document.getElementById('donate-settings');
+    const app = {
+        elements: {
+            input: document.getElementById('user-input'),
+            sendBtn: document.getElementById('send-btn'),
+            chatArea: document.getElementById('chat-area'),
+            quickPrompts: document.getElementById('quick-prompts'),
+            contextValue: document.getElementById('context-value'),
+            supportOverlay: document.getElementById('support-overlay'),
+            quotePreview: document.getElementById('quote-preview'),
+            quoteText: document.getElementById('quote-text-content'),
+            closeQuote: document.getElementById('close-quote'),
+            supportTimer: document.getElementById('support-timer')
+        },
+        state: {
+            currentUrl: null,
+            tabId: null,
+            isLoading: false,
+            requestTimestamps: [],
+            currentSelection: null,
+            isSystemPage: false
+        },
 
-    const port = chrome.runtime.connect({
-        name: "keep_alive"
-    });
-    port.onMessage.addListener(() => {});
+        init() {
+            this.setupConnection();
+            this.setupListeners();
+            this.checkActiveTab();
+            this.setupMessageListener();
+            setInterval(() => this.checkActiveTab(), 1000);
+            this.loadRequestHistory();
+        },
 
-    let currentUrl = null;
+        setupConnection() {
+            const port = chrome.runtime.connect({ name: "keep_alive" });
+            port.onMessage.addListener(() => {});
+        },
 
-    chrome.storage.local.get(['detail', 'tone', 'lang'], (res) => {
-        if (detailSelect) detailSelect.value = res.detail || 'detailed';
-        if (langSelect) langSelect.value = res.lang || 'en';
-        if (toneSelect) toneSelect.value = res.tone || 'professional';
-    });
+        setupMessageListener() {
+            chrome.runtime.onMessage.addListener((req) => {
+                if (req.action === "trigger_selection_ui") {
+                    this.handleSelectionEvent(req.text);
+                }
+            });
+        },
 
-    /**
-     * Initializes the side panel by identifying the active tab and updating the UI.
-     */
-    async function init() {
-        const [tab] = await chrome.tabs.query({
-            active: true,
-            lastFocusedWindow: true
-        });
-        if (tab) {
-            currentUrl = tab.url;
-            updateUI();
+        setupListeners() {
+            this.elements.input.addEventListener('input', () => {
+                this.resizeInput();
+                this.elements.sendBtn.disabled = this.elements.input.value.trim() === '';
+            });
+
+            this.elements.input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.handleSend();
+                }
+            });
+
+            this.elements.sendBtn.addEventListener('click', () => this.handleSend());
+            this.elements.closeQuote.addEventListener('click', () => this.clearSelection());
+
+            document.querySelectorAll('.chip').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const prompt = btn.dataset.prompt;
+                    this.elements.input.value = prompt;
+                    this.resizeInput();
+                    this.elements.sendBtn.disabled = false;
+                    this.handleSend();
+                });
+            });
+        },
+
+        resizeInput() {
+            this.elements.input.style.height = 'auto';
+            this.elements.input.style.height = this.elements.input.scrollHeight + 'px';
+        },
+
+        isSystemUrl(url) {
+            return !url || 
+                   url.startsWith('chrome://') || 
+                   url.startsWith('edge://') || 
+                   url.startsWith('about:') || 
+                   url.startsWith('chrome-extension://') ||
+                   url.includes('notly.dev');
+        },
+
+        async checkActiveTab() {
+            const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+            
+            if (tab && tab.id) {
+                if (tab.id !== this.state.tabId || tab.url !== this.state.currentUrl) {
+                    
+                    this.clearSelection();
+
+                    this.state.tabId = tab.id;
+                    this.state.currentUrl = tab.url;
+                    
+                    if (this.isSystemUrl(tab.url)) {
+                        this.state.isSystemPage = true;
+                        this.renderSystemPageError();
+                        this.elements.input.disabled = true;
+                        this.elements.sendBtn.disabled = true;
+                        this.elements.quickPrompts.classList.add('hidden');
+                        this.elements.contextValue.textContent = "System Page";
+                        return;
+                    } else {
+                        this.state.isSystemPage = false;
+                        this.elements.input.disabled = false;
+                    }
+                    
+                    try {
+                        const urlObj = new URL(tab.url);
+                        this.elements.contextValue.textContent = urlObj.hostname.replace('www.', '');
+                    } catch {
+                        this.elements.contextValue.textContent = 'Web Page';
+                    }
+
+                    await this.loadChat(tab.id, tab.url);
+                    this.checkPendingSelection(tab.id);
+                }
+            }
+        },
+
+        renderSystemPageError() {
+            this.elements.chatArea.innerHTML = '';
+            this.elements.chatArea.classList.add('empty-view');
+            const div = document.createElement('div');
+            div.className = 'empty-state';
+            div.innerHTML = `
+                <img src="icon/error.svg" class="state-icon error-icon" alt="Restricted">
+                <h2>Restricted Access</h2>
+                <span>Notly cannot analyze browser system pages or settings</span>
+            `;
+            this.elements.chatArea.appendChild(div);
+        },
+
+        async loadChat(tabId, url) {
+            const key = `chat_${tabId}`;
+            const result = await chrome.storage.local.get(key);
+            const data = result[key];
+
+            this.elements.chatArea.innerHTML = '';
+            this.elements.chatArea.classList.remove('empty-view');
+
+            if (data && data.url === url && data.messages.length > 0) {
+                data.messages.forEach(msg => {
+                    this.appendMessage(msg.role, msg.content, false);
+                });
+                this.elements.quickPrompts.classList.add('hidden');
+            } else {
+                this.elements.chatArea.classList.add('empty-view');
+                this.renderEmptyState();
+                this.elements.quickPrompts.classList.remove('hidden');
+            }
+            this.scrollToBottom();
+        },
+
+        renderEmptyState() {
+            this.elements.chatArea.innerHTML = `
+                <div class="empty-state">
+                    <img src="icon/star.svg" class="state-icon" alt="Star">
+                    <h2>Ready to help</h2>
+                    <span>Ask me anything about this page</span>
+                </div>
+            `;
+        },
+
+        async saveChat(role, content) {
+            if (!this.state.tabId || this.state.isSystemPage) return;
+            const key = `chat_${this.state.tabId}`;
+            
+            const result = await chrome.storage.local.get(key);
+            let history = result[key] || { url: this.state.currentUrl, messages: [] };
+            
+            if (history.url !== this.state.currentUrl) {
+                history = { url: this.state.currentUrl, messages: [] };
+            }
+
+            history.messages.push({ role, content });
+            await chrome.storage.local.set({ [key]: history });
+        },
+
+        async checkPendingSelection(tabId) {
+            const key = `selection_${tabId}`;
+            const res = await chrome.storage.local.get(key);
+            if (res[key]) {
+                this.handleSelectionEvent(res[key]);
+                chrome.storage.local.remove(key);
+            }
+        },
+
+        handleSelectionEvent(text) {
+            if (!text || this.state.isSystemPage) return;
+            this.state.currentSelection = text;
+            this.elements.quoteText.textContent = text;
+            this.elements.quotePreview.classList.remove('hidden');
+            this.elements.input.focus();
+        },
+
+        clearSelection() {
+            this.state.currentSelection = null;
+            this.elements.quotePreview.classList.add('hidden');
+            this.elements.quoteText.textContent = '';
+        },
+
+        loadRequestHistory() {
+            const stored = localStorage.getItem('req_timestamps');
+            if (stored) {
+                this.state.requestTimestamps = JSON.parse(stored);
+            }
+        },
+
+        checkRateLimit() {
+            const now = Date.now();
+            const TEN_MINUTES = 10 * 60 * 1000;
+            const LIMIT_COUNT = 10;
+            
+            this.state.requestTimestamps = this.state.requestTimestamps.filter(t => now - t < TEN_MINUTES);
+            
+            if (this.state.requestTimestamps.length >= LIMIT_COUNT) {
+                this.showSupportOverlay();
+                return false;
+            }
+            
+            this.state.requestTimestamps.push(now);
+            localStorage.setItem('req_timestamps', JSON.stringify(this.state.requestTimestamps));
+            return true;
+        },
+
+        showSupportOverlay() {
+            this.elements.supportOverlay.classList.remove('hidden');
+            let timeLeft = 300; 
+            
+            this.elements.supportOverlay.querySelector('p').innerHTML = `High server traffic. Please wait <span id="support-timer" class="timer">5:00</span> before your next request`;
+
+            const updateTimer = () => {
+                const minutes = Math.floor(timeLeft / 60);
+                const seconds = timeLeft % 60;
+                this.elements.supportTimer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            };
+            
+            updateTimer();
+            
+            const timer = setInterval(() => {
+                timeLeft--;
+                updateTimer();
+                if (timeLeft <= 0) {
+                    clearInterval(timer);
+                    this.elements.supportOverlay.classList.add('hidden');
+                    this.state.requestTimestamps = []; 
+                    localStorage.setItem('req_timestamps', '[]');
+                }
+            }, 1000);
+        },
+
+        async handleSend() {
+            if (this.state.isSystemPage) return;
+            
+            let text = this.elements.input.value.trim();
+            if (!text || this.state.isLoading) return;
+            if (!this.checkRateLimit()) return;
+
+            const emptyState = this.elements.chatArea.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+                this.elements.chatArea.classList.remove('empty-view');
+            }
+
+            this.elements.input.value = '';
+            this.resizeInput();
+            this.elements.sendBtn.disabled = true;
+            this.state.isLoading = true;
+            this.elements.quickPrompts.classList.add('hidden');
+            
+            let promptToSend = text;
+            let displayHtml = text;
+
+            if (this.state.currentSelection) {
+                promptToSend = `> ${this.state.currentSelection}\n\n${text}`;
+                displayHtml = `<blockquote>${this.escapeHtml(this.state.currentSelection)}</blockquote>${this.escapeHtml(text)}`;
+                this.clearSelection();
+            } else {
+                displayHtml = this.escapeHtml(text);
+            }
+
+            this.appendMessage('user', displayHtml, true);
+            const loadingId = this.appendLoading();
+
+            try {
+                const response = await chrome.runtime.sendMessage({
+                    action: "send_chat",
+                    tabId: this.state.tabId,
+                    url: this.state.currentUrl,
+                    prompt: promptToSend
+                });
+
+                this.removeLoading(loadingId);
+
+                if (response && response.success) {
+                    this.appendMessage('ai', response.data, true);
+                } else {
+                    const errMsg = response.error || 'Unknown error';
+                    this.renderErrorState(errMsg);
+                }
+            } catch (err) {
+                this.removeLoading(loadingId);
+                this.renderErrorState(`Connection failed: ${err.message}`);
+            } finally {
+                this.state.isLoading = false;
+                this.elements.input.focus();
+            }
+        },
+
+        renderErrorState(message) {
+            if (this.elements.chatArea.children.length === 0) {
+                 this.elements.chatArea.classList.add('empty-view');
+            }
+
+            const div = document.createElement('div');
+            div.className = 'empty-state';
+            div.innerHTML = `
+                <img src="icon/error.svg" class="state-icon error-icon" alt="Error">
+                <h2 style="color:#ff4f44">Something went wrong</h2>
+                <span>${message}</span>
+            `;
+            this.elements.chatArea.appendChild(div);
+            this.scrollToBottom();
+        },
+
+        escapeHtml(text) {
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        },
+
+        appendMessage(role, textOrHtml, saveToStorage = true) {
+            const div = document.createElement('div');
+            div.className = `message ${role}-message`;
+            
+            if (role === 'ai') {
+                div.innerHTML = marked.parse(textOrHtml);
+                div.querySelectorAll('a').forEach(a => a.target = '_blank');
+            } else {
+                if (textOrHtml.includes('<blockquote>')) {
+                    div.innerHTML = textOrHtml;
+                } else {
+                    div.innerText = textOrHtml; 
+                }
+            }
+
+            this.elements.chatArea.appendChild(div);
+            this.scrollToBottom();
+
+            if (saveToStorage) {
+                this.saveChat(role, textOrHtml);
+            }
+        },
+
+        appendLoading() {
+            const id = 'loading-' + Date.now();
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = 'message ai-message ai-loading';
+            div.innerHTML = '<div class="ai-loading-bubble"></div>';
+            this.elements.chatArea.appendChild(div);
+            this.scrollToBottom();
+            return id;
+        },
+
+        removeLoading(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        },
+
+        scrollToBottom() {
+            this.elements.chatArea.scrollTop = this.elements.chatArea.scrollHeight;
         }
-    }
-
-    init();
-
-    chrome.tabs.onActivated.addListener(async (info) => {
-        const tab = await chrome.tabs.get(info.tabId);
-        currentUrl = tab.url;
-        updateUI();
-    });
-
-    setInterval(() => {
-        if (currentUrl) updateUI();
-    }, 1000);
-
-    if (openSettingsBtn) {
-        openSettingsBtn.onclick = () => {
-            if (main) main.classList.add('hidden');
-            if (settings) settings.classList.remove('hidden');
-        };
-    }
-
-    if (backHomeBtn) {
-        backHomeBtn.onclick = () => {
-            if (settings) settings.classList.add('hidden');
-            if (main) main.classList.remove('hidden');
-        };
-    }
-
-    /**
-     * Opens a new Chrome tab with the specified URL.
-     * @param {string} url The URL to open.
-     */
-    const openLink = (url) => {
-        chrome.tabs.create({
-            url: url
-        });
     };
 
-    if (githubMain) githubMain.onclick = () => openLink('https://github.com/NotlyAI/notly');
-    if (donateMain) donateMain.onclick = () => openLink('https://d.uptrix.fun');
-    if (githubSettings) githubSettings.onclick = () => openLink('https://github.com/NotlyAI/notly');
-    if (donateSettings) donateSettings.onclick = () => openLink('https://d.uptrix.fun');
-
-    if (summarizeBtn) {
-        summarizeBtn.onclick = async () => {
-            const [tab] = await chrome.tabs.query({
-                active: true,
-                currentWindow: true
-            });
-            if (tab && tab.url) {
-                await chrome.storage.local.set({
-                    [`status_${tab.url}`]: 'loading',
-                    [`startTime_${tab.url}`]: Date.now()
-                });
-                chrome.runtime.sendMessage({
-                    action: "manual_summarize",
-                    tabId: tab.id,
-                    url: tab.url
-                });
-                updateUI();
-            }
-        };
-    }
-
-    if (cancelBtn) {
-        cancelBtn.onclick = async () => {
-            if (currentUrl) {
-                await chrome.storage.local.set({
-                    [`status_${currentUrl}`]: 'ready'
-                });
-                chrome.runtime.sendMessage({
-                    action: "cancel_summarize",
-                    url: currentUrl
-                });
-                if (toast) toast.classList.remove('visible');
-                updateUI();
-            }
-        };
-    }
-
-    if (detailSelect) {
-        detailSelect.onchange = () => {
-            chrome.storage.local.set({
-                detail: detailSelect.value
-            });
-        };
-    }
-
-    if (langSelect) {
-        langSelect.onchange = () => {
-            chrome.storage.local.set({
-                lang: langSelect.value
-            });
-        };
-    }
-
-    if (toneSelect) {
-        toneSelect.onchange = () => {
-            chrome.storage.local.set({
-                tone: toneSelect.value
-            });
-        };
-    }
-
-    /**
-     * Displays a loading skeleton in the results area.
-     */
-    function renderLoading() {
-        if (!resDiv) return;
-        resDiv.classList.remove('fade-in');
-        resDiv.innerHTML = `
-            <div class="ai-loading-container">
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line medium"></div>
-                <div class="skeleton-line short"></div>
-                <div class="skeleton-line" style="margin-top:10px"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line medium"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line short"></div>
-            </div>`;
-    }
-
-    /**
-     * Fetches the current state from storage and updates the UI accordingly.
-     * This function is the central renderer for the side panel.
-     */
-    async function updateUI() {
-        if (!currentUrl) return;
-        const res = await chrome.storage.local.get([
-            `sum_${currentUrl}`, `status_${currentUrl}`, `startTime_${currentUrl}`, `type_${currentUrl}`
-        ]);
-
-        const status = res[`status_${currentUrl}`] || 'ready';
-        const summary = res[`sum_${currentUrl}`];
-        const sourceType = res[`type_${currentUrl}`];
-
-        if (contextValue) {
-            if (sourceType === 'selection') {
-                contextValue.textContent = 'Selected Text';
-            } else {
-                try {
-                    contextValue.textContent = new URL(currentUrl).hostname.replace('www.', '');
-                } catch {
-                    contextValue.textContent = 'Web Page';
-                }
-            }
-        }
-
-        const startTime = res[`startTime_${currentUrl}`];
-        if (toast) {
-            if (status === 'loading' && startTime && (Date.now() - startTime > 5000)) {
-                toast.classList.add('visible');
-            } else {
-                toast.classList.remove('visible');
-            }
-        }
-
-        if (status === 'loading') {
-            setLoad(true);
-            if (resDiv && !resDiv.querySelector('.ai-loading-container')) renderLoading();
-        } else {
-            setLoad(false);
-            if (!resDiv) return;
-
-            if (summary && summary.startsWith('Error:')) {
-                resDiv.classList.remove('fade-in');
-                resDiv.innerHTML = `<div class="empty-state"><img src="icon/error.svg" class="state-icon"><p style="color:#ff4f44">Analysis Failed</p><span>${summary.replace('Error: ', '')}</span></div>`;
-            } else if (summary) {
-                if (resDiv.dataset.currentSum !== summary) {
-                    resDiv.dataset.currentSum = summary;
-                    resDiv.classList.remove('fade-in');
-
-                    let htmlContent = typeof marked !== 'undefined' ? marked.parse(summary) : summary;
-                    resDiv.innerHTML = htmlContent;
-
-                    resDiv.querySelectorAll('hr').forEach(el => el.remove());
-                    resDiv.querySelectorAll('li, p').forEach(el => {
-                        let txt = el.textContent.trim();
-                        if (el.tagName === 'LI') {
-                            el.innerHTML = el.innerHTML.replace(/^[\u2022\u00b7\u25cf]\s*/, '');
-                            txt = el.textContent.trim();
-                        }
-                        if (!txt || /^[\.\-\*\•\·\_\—\s]+$/.test(txt)) {
-                            el.remove();
-                        }
-                    });
-
-                    resDiv.querySelectorAll('a').forEach(link => {
-                        link.setAttribute('target', '_blank');
-                        link.style.color = '#4da6ff';
-                    });
-
-                    void resDiv.offsetWidth;
-                    resDiv.classList.add('fade-in');
-                }
-            } else {
-                resDiv.classList.remove('fade-in');
-                resDiv.innerHTML = `<div class="empty-state"><img src="icon/star.svg" class="state-icon"><p>Ready to illuminate?</p><span>Click the button below to start</span></div>`;
-            }
-        }
-    }
-
-    /**
-     * Sets the loading state of the main "Summarize" button.
-     * @param {boolean} isLoading - True to show loading state, false otherwise.
-     */
-    function setLoad(isLoading) {
-        const btn = document.getElementById('summarize');
-        const loader = document.getElementById('btn-loader');
-        const txt = document.getElementById('btn-text');
-
-        if (!btn || !loader || !txt) return;
-
-        if (isLoading) {
-            btn.disabled = true;
-            loader.classList.remove('hidden');
-            txt.textContent = 'Thinking...';
-        } else {
-            btn.disabled = false;
-            loader.classList.add('hidden');
-            txt.textContent = 'Summarize';
-        }
-    }
+    app.init();
 });

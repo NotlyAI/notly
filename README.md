@@ -1,77 +1,61 @@
 <p align="center">
-  <img src="extension/icon/icon.png" width="128" alt="NotlyAI Logo">
+  <img src="extension/icon/icon.png" width="128" alt="Notly Logo">
 </p>
 
-# NotlyAI
+# Notly
 
-**NotlyAI** is an open-source Google Chrome extension designed for semantic text analysis and summarization. It utilizes a client-server architecture where the browser extension captures page content and communicates with a Python-based backend powered by Large Language Models (LLM).
+**Notly** is an intelligent, open-source AI assistant for your browser. It transforms how you interact with the web by allowing you to chat with any page, summarize content, and analyze specific text selections instantly.
 
-The system leverages the Llama 3.3 70B model via the Groq API to provide high-speed, context-aware summaries in English and Russian.
+Powered by **Llama 3.3 70B** via the **Groq API**, Notly delivers lightning-fast, context-aware responses while maintaining strict privacy standards.
 
-## 📥 Download
+## ✨ Features
 
-**[Download NotlyAI from Chrome Web Store](https://uptrix.fun)**
-*(Link will be available soon)*
+- **Chat with Page:** Ask questions about the current tab's content
+- **Smart Selection:** Highlight text to analyze, translate, or explain specific sections
+- **Context Awareness:** Understands the structure and nuance of web content
+- **Privacy First:** No history storage, no tracking, transient data processing
+- **Markdown Support:** Renders rich text, code blocks, and clickable links
+
+## 📥 Installation
+
+**[Download Notly from Chrome Web Store](https://uptrix.fun)**
+*(Link coming soon)*
 
 ---
 
-## 👨‍💻 Development & Self-Hosting
+## 👨‍💻 Development
 
-The following instructions are intended for developers who wish to contribute to the project or host their own instance of the backend.
+### Architecture
 
-### Architecture Overview
+1.  **Extension (Client):** Captures DOM content, handles user UI (Side Panel), and manages state.
+2.  **Backend (Server):** FastAPI wrapper for LLM interaction with strict Origin verification.
 
-The project consists of two core components:
-1.  **Browser Extension (Client):** Handles UI and DOM extraction.
-2.  **Backend API (Server):** FastAPI application handling LLM requests.
+### Self-Hosting the Backend
 
-### Prerequisites
-
-*   **Python:** Version 3.10+.
-*   **Browser:** Chromium-based browser (Chrome, Edge, Brave).
-*   **API Access:** Valid Groq API keys.
-
-### 1. Backend Setup
-
-To run the backend locally:
-
-1.  Clone the repository:
+1.  Clone the repo:
     ```bash
-    git clone https://github.com/uptrix/NotlyAI.git
-    cd NotlyAI/backend
+    git clone https://github.com/NotlyAI/notly.git
+    cd backend
     ```
 
-2.  Create a virtual environment and install dependencies:
+2.  Install dependencies:
     ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
     pip install -r requirements.txt
     ```
 
-3.  Configuration:
-    Create a `.env` file in the `backend` directory. Add your Groq API keys:
+3.  Configure environment:
+    Create `.env` and add your Groq API keys:
     ```env
-    GROQ_API_KEYS=gsk_key1,gsk_key2,gsk_key3
+    GROQ_API_KEYS=gsk_...,gsk_...
     ```
 
-4.  Start the server:
+4.  Run the server:
     ```bash
     python main.py
     ```
 
-### 2. Extension Setup (Developer Mode)
-
-1.  Open Chrome and navigate to `chrome://extensions/`.
-2.  Enable **Developer mode** (top right).
-3.  Click **Load unpacked**.
-4.  Select the project folder containing `manifest.json`.
-
-**Note:** By default, the extension connects to `http://127.0.0.1:8000`. If you are running a production server, update the API URL in `background.js`.
+**Security Note:** The backend enforces an `Origin` header check. It will only accept requests from Chrome Extensions (`chrome-extension://`).
 
 ## 🛡 License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+MIT License. Free and open source forever.

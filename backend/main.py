@@ -1,15 +1,6 @@
-"""
-This module implements the backend server for the NotlyAI summarization service.
-
-It uses FastAPI to create a web server that exposes a `/summarize` endpoint.
-The server accepts text and summarization parameters, then communicates with the
-Groq API to generate a high-quality, structured summary using a large language model.
-The module is designed to be resilient, supporting multiple API keys and falling back
-if one key fails.
-"""
 import uvicorn
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
@@ -22,119 +13,74 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class SummarizeRequest(BaseModel):
-    """Defines the data structure for a summarization request."""
+class ChatRequest(BaseModel):
     text: str
-    language: str
-    detail_level: str
-    tone: str
+    prompt: str
 
 def clean_text(text: str) -> str:
     """
-    Sanitizes a string by attempting to encode and decode it as UTF-8,
-    ignoring any characters that cannot be processed.
-
-    Args:
-        text: The input string to clean.
-
-    Returns:
-        The cleaned string, or an empty string if an error occurs.
+    Sanitizes the input string by encoding and decoding UTF-8 to remove incompatible characters.
     """
     try:
         return text.encode('utf-8', 'ignore').decode('utf-8')
     except:
         return ""
 
-@app.post("/summarize")
-async def summarize(request: SummarizeRequest):
+@app.post("/chat")
+async def chat(request: ChatRequest, origin: str | None = Header(default=None)):
     """
-    Handles the summarization request by calling the Groq API.
-
-    This function retrieves API keys from environment variables, prepares a
-    dynamically generated prompt based on user-specified detail and tone,
-    and then attempts to generate a summary by trying each API key in sequence
-    until one succeeds.
-
-    Args:
-        request: A `SummarizeRequest` object containing the text and parameters.
-
-    Returns:
-        A dictionary with the generated summary or an error message if all
-        API calls fail.
+    Process chat requests using the Llama 3.3 model via Groq API.
+    Enforces origin checks to restrict usage to the specific Chrome Extension.
     """
+    if not origin or not origin.startswith("chrome-extension://"):
+        return {"response": "Error: Access denied. Requests must originate from the Notly extension"}
+
     keys_str = os.getenv("GROQ_API_KEYS") or os.getenv("GROQ_API_KEY") or ""
     api_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
-
+    
     if not api_keys:
-        return {"summary": "Error: Server config error (No API keys)."}
+        return {"response": "Error: Server config error (No API keys)"}
 
     cleaned_text = clean_text(request.text)
-    safe_text_length = 35000
+    safe_text_length = 30000
     truncated_text = cleaned_text[:safe_text_length]
 
-    if request.language.lower().startswith("ru"):
-        target_lang_name = "Russian"
-        lang_instruction = "ОТВЕЧАЙ ТОЛЬКО НА РУССКОМ ЯЗЫКЕ."
-    else:
-        target_lang_name = "English"
-        lang_instruction = "ANSWER ONLY IN ENGLISH. Even if the text is in Russian, translate and summarize in English."
+    system_message = (
+        "You are Notly, an intelligent AI assistant. "
+        "IMPORTANT: DETECT the language of the User Question. "
+        "ALWAYS answer in the EXACT SAME language as the User Question. "
+        "If the user asks in Russian, answer in Russian. If in English, answer in English. "
+        "Answer the question based strictly on the provided context. "
+        "If the user includes a quoted selection, focus your answer on that specific part. "
+        "If you find URLs or links in the text that are relevant to the answer, include them formatted as Markdown [Link Text](URL). "
+        "Use Markdown for formatting. Be concise, professional, and direct. "
+        "DO NOT end your sentences with a period if it is a single sentence header or short status message."
+    )
 
-    if request.tone == "casual":
-        tone_prompt = "Casual, simple, blog-style."
-    else:
-        tone_prompt = "Professional, analytical, concise."
-
-    if request.detail_level == "detailed":
-        task_description = (
-            f"Create a COMPREHENSIVE ANALYSIS in {target_lang_name}.\n"
-            "1. Title (H1)\n"
-            "2. Detailed Context (paragraph)\n"
-            "3. Key Takeaways (bullet points with explanations)\n"
-            "4. Deep Analysis (H2)\n"
-            "5. Conclusion"
-        )
-    else:
-        task_description = (
-            f"Create a CONCISE SUMMARY in {target_lang_name}.\n"
-            "1. Title (H1)\n"
-            "2. Short Summary Paragraph\n"
-            "3. 3-5 Key Bullet Points"
-        )
-
-    system_message = f"""You are a professional content summarizer.
-STRICT RULES:
-1. OUTPUT LANGUAGE: {target_lang_name} ONLY. {lang_instruction}
-2. Tone: {tone_prompt}
-3. Format: Markdown.
-4. Content: {task_description}"""
-
-    user_message_content = f"Text to summarize:\n\n{truncated_text}\n\n---\nREMINDER: OUTPUT MUST BE IN {target_lang_name.upper()}!"
+    user_content = f"Context:\n{truncated_text}\n\nUser Question:\n{request.prompt}"
 
     last_error = "No attempts"
-
-    for i, key in enumerate(api_keys):
+    for key in api_keys:
         try:
             client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=key)
             completion = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": system_message},
-                    {"role": "user", "content": user_message_content}
+                    {"role": "user", "content": user_content}
                 ],
                 temperature=0.3,
                 max_tokens=4096
             )
-            return {"summary": completion.choices[0].message.content.strip()}
+            return {"response": completion.choices[0].message.content.strip()}
         except Exception as e:
             last_error = str(e)
             continue
-
-    return {"summary": f"Service Error: {last_error}"}
+            
+    return {"response": f"Service Error: {last_error}"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

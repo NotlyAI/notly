@@ -1,30 +1,30 @@
 {
-    "manifest_version": 3,
-    "name": "NotlyAI",
-    "version": "2.134",
-    "description": "Private, open-source AI summaries for web pages and selected text",
-    "permissions": [
-        "activeTab",
-        "scripting",
-        "storage",
-        "tabs",
-        "contextMenus",
-        "sidePanel"
-    ],
-    "background": {
-        "service_worker": "background.js"
-    },
-    "action": {
-        "default_title": "Open NotlyAI"
-    },
-    "side_panel": {
-        "default_path": "sidepanel.html"
-    },
-    "icons": {
-        "128": "icon/icon.png"
-    },
-    "host_permissions": [
-    "https://api.uptrix.fun/*",
+  "manifest_version": 3,
+  "name": "Notly",
+  "version": "3.1.0",
+  "description": "Your intelligent AI companion for the web. Chat with any page, summarize content, and analyze selected text instantly",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "sidePanel",
+    "contextMenus"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Notly Chat"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "icons": {
+    "128": "icon/icon.png"
+  },
+  "host_permissions": [
+    "https://api.notly.dev/*",
     "<all_urls>"
-    ]
+  ]
 }
